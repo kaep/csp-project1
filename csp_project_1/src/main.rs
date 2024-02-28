@@ -42,6 +42,11 @@ fn independent_output(num_threads: i32, num_hash_bits: i32) {
     //where b is the number of hash bits
     //do hash key % hash bits
     //where hash bits is 1-18
+    let N: i32 = 90000000; //placeholder -> replace with 
+    let buffer_size: i32 = N / (num_threads*(2 << num_hash_bits));
+    let num_buffers: i32 = num_threads*(2 << num_hash_bits);
+    let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
+
 }
 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {
