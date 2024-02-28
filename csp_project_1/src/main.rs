@@ -21,6 +21,10 @@ fn main() {
 
 }
 
+fn hash(part_key: u64, hash_bits: u64) -> u64 {
+    //partitioning key is 8 byte aka 64 bits
+    part_key % 2 << hash_bits
+}
 
 fn independent_output() {
     //coordination of input tuples to each thread is necessary
