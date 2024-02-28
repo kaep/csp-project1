@@ -1,4 +1,5 @@
-use std::env;
+use std::{env, fs::File, io::{self, Write}};
+use rand::Rng;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -51,4 +52,23 @@ fn independent_output(num_threads: i32, num_hash_bits: i32) {
 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {
 
+}
+
+fn gen_data(size: usize, file: &str) -> io::Result<()> {
+    println!("Writing {} tuples to {}...", size, file);
+    let mut rng = rand::thread_rng();
+    let mut f = File::create(file)?;
+    for i in 0..size {
+        if i % 1000 == 0 {
+            print!("Tuple: {} of {}            \r", i, size)
+        }
+        let key: u64 = i as u64;
+        let val: u64 = rng.gen();
+        f.write_all(&key.to_ne_bytes())?;
+        f.write_all(&val.to_ne_bytes())?;
+    }
+    println!("Tuple: {} of {}           ", size, size);
+    println!("Done!");
+
+    Ok(())
 }
