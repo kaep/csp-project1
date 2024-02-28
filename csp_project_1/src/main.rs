@@ -12,6 +12,13 @@ fn main() {
 
     let max_hash_bits = 18;
 
+    //DATA GENERATION
+    //we need to do it ourselves
+    //and do it in a way where reading from disk
+    //is NOT included in our measurements e.g. 
+    //generate just before experiement or make sure 
+    //that it is read into memory (not streamed) just before
+
 }
 
 
