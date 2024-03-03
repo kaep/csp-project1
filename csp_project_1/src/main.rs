@@ -2,8 +2,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use rand::Rng;
 use std::{
     env,
-    fs::File,
-    io::{self, Write},
+    fs::{self, File},
+    io::{self, Read, Write},
 };
 
 #[derive(Parser)]
@@ -27,6 +27,7 @@ enum Commands {
 }
 
 fn main() -> io::Result<()> {
+    read_data("./test.data");
     let args = Cli::parse();
     match args.command {
         Commands::Gen { size, file } => gen_data(size, file.as_str()),
@@ -56,6 +57,21 @@ fn main() -> io::Result<()> {
     //generate just before experiement or make sure
     //that it is read into memory (not streamed) just before
     Ok(())
+}
+
+fn read_data(file_path: &str) -> Vec<(u64, u64)> {
+    //file consisting of tuples of 8 byte partitioning key and 8 byte payload
+    //could have used byteorder crate
+    //but resolved to an answer by Alice Ryhl here: https://users.rust-lang.org/t/reading-binary-files-a-trivial-program-not-so-trivial-for-me/56166/3 
+    let mut tuples: Vec<(u64, u64)> = Vec::new();
+    let file = fs::read(file_path).unwrap();
+    for bytes in file.chunks_exact(16) {
+        let key =  u64::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]);
+        let payload = u64::from_ne_bytes([bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]);
+        //println!("{:x} {:x}", key, payload);
+        tuples.push((key, payload));
+    }
+    tuples
 }
 
 fn hash(part_key: i64, hash_bits: i64) -> i64 {
