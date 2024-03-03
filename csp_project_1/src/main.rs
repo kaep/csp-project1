@@ -41,7 +41,7 @@ fn main() -> io::Result<()> {
                 );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./test.data");
+                    let data = read_data("./2to24.data");
                     independent_output(data, num_threads, num_hash_bits);
                 },
                 2 => count_then_move(num_threads, num_hash_bits),
@@ -78,7 +78,7 @@ fn read_data(file_path: &str) -> Vec<(u64, u64)> {
 
 fn hash(part_key: i64, hash_bits: i32) -> i64 {
     //partitioning key is 8 byte aka 64 bits
-    part_key % 2 << hash_bits
+    part_key % (2 << hash_bits)
 }
 
 fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i32) {
@@ -95,8 +95,8 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
     
     // each thread should just return a buffer, so this is 
-    // redundant
-    let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
+    // redundant -> but should this be done in each thread? yes!
+    //let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
 
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
@@ -112,9 +112,10 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
         // we need to clone and move entire data as to not have issues with 
         //ownership i.e. chunking before move is bad
         let handle = thread::spawn(move || {
-            thread(cloned_data, thread_number, chunk_size as i32, num_hash_bits);
+            thread(cloned_data, thread_number, chunk_size as i32, num_hash_bits, buffer_size as usize, num_buffers);
             //for (key, payload) in my_chunk.clone() {}
         });
+       //handle.join();
     }
     //is is bad practice to not join?
 
@@ -141,12 +142,15 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
 
 }
 
-fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32, hash_bits: i32) {
+fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32, hash_bits: i32, buffer_size: usize, num_buffers: i32) {
     //downside: last chunk will be larger when size is not divisible by amount of threads
     let my_chunk = data.chunks(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
+    let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
+
     for (key, payload) in my_chunk {
         let hash = hash(*key as i64, hash_bits);
         println!("Thread {} hashed key {} into {}", thread_number, key, hash);
+        buffers[hash as usize].push(*payload);
     }
 }
 
