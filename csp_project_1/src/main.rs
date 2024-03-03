@@ -100,14 +100,28 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
     // maybe see PCPP code
     let chunk_size = data.len() / num_threads as usize;
     println!("chunk size: {} given length of data: {}", chunk_size, data.len());
-    for chunk in data.chunks_exact(chunk_size) {
+    for thread_number in 0..num_threads {
+        let cloned_data = data.clone();
+        let start = (thread_number*(chunk_size as i32)) as usize;
+        let end = ((thread_number+1) * chunk_size as i32) as usize;
+        //let chunks = cloned_data.chunks_exact(chunk_size).collect::<Vec<_>>();
+        //let my_chunk = chunks.collect::<Vec<_>>()[thread_number as usize];
+        
+        // we need to clone and move entire data as to not have issues with 
+        //ownership i.e. chunking before move is bad
         let handle = thread::spawn(move || {
-            for (key, payload) in chunk {
-                let hash = hash(*key as i64, 1);
-            } 
+            thread(cloned_data, thread_number, chunk_size as i32);
+            //for (key, payload) in my_chunk.clone() {}
         });
-        //handle.join();
     }
+    // for chunk in data.chunks_exact(chunk_size) {
+    //     let handle = thread::spawn(move || {
+    //         for (key, payload) in chunk {
+    //             let hash = hash(*key as i64, 1);
+    //         } 
+    //     });
+    //     handle.join();
+    // }
 
     // let mut handles = Vec::new();
     // for thread in 0..num_threads {
@@ -121,6 +135,21 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
     // }
 
 
+}
+
+fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32) {
+    //let my_chunk = data[thread_number as usize];
+    let chunk_start = (thread_number*chunk_size) as usize;
+    let chunk_end = ((thread_number+1)*chunk_size) as usize;
+    
+    //problem: cannot range into data as size has to be known
+    //aaah but no need! collecting chunks gives me a vec of chunk_size elements!  
+
+    let my_chunk = data.chunks_exact(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
+    for (key, payload) in my_chunk {
+        let hash = hash(*key as i64, 1);
+        println!("Thread {} hashed key {} into {}", thread_number, key, hash);
+    }
 }
 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {}
