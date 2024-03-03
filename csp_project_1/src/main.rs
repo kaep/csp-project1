@@ -93,12 +93,14 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
     let N = data.len() as i32; 
     let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
+    
+    // each thread should just return a buffer, so this is 
+    // redundant
     let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
-    // are we gonna have a problem with ownership and 32 threads writing to the same vec?
 
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
-    let chunk_size = data.len() / num_threads as usize;
+    let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     println!("chunk size: {} given length of data: {}", chunk_size, data.len());
     for thread_number in 0..num_threads {
         let cloned_data = data.clone();
@@ -113,6 +115,7 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
             thread(cloned_data, thread_number, chunk_size as i32);
             //for (key, payload) in my_chunk.clone() {}
         });
+        handle.join();
     }
     // for chunk in data.chunks_exact(chunk_size) {
     //     let handle = thread::spawn(move || {
@@ -138,14 +141,8 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
 }
 
 fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32) {
-    //let my_chunk = data[thread_number as usize];
-    let chunk_start = (thread_number*chunk_size) as usize;
-    let chunk_end = ((thread_number+1)*chunk_size) as usize;
-    
-    //problem: cannot range into data as size has to be known
-    //aaah but no need! collecting chunks gives me a vec of chunk_size elements!  
-
-    let my_chunk = data.chunks_exact(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
+    //downside: last chunk will be larger when size is not divisible by amount of threads
+    let my_chunk = data.chunks(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
     for (key, payload) in my_chunk {
         let hash = hash(*key as i64, 1);
         println!("Thread {} hashed key {} into {}", thread_number, key, hash);
