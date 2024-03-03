@@ -27,7 +27,6 @@ enum Commands {
 }
 
 fn main() -> io::Result<()> {
-    read_data("./test.data");
     let args = Cli::parse();
     match args.command {
         Commands::Gen { size, file } => gen_data(size, file.as_str()),
@@ -41,7 +40,10 @@ fn main() -> io::Result<()> {
                     num_threads, num_hash_bits, partitioning_method
                 );
             match partitioning_method {
-                1 => independent_output(num_threads, num_hash_bits),
+                1 => {
+                    let data = read_data("./test.data");
+                    independent_output(data, num_threads, num_hash_bits);
+                },
                 2 => count_then_move(num_threads, num_hash_bits),
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
@@ -79,7 +81,7 @@ fn hash(part_key: i64, hash_bits: i64) -> i64 {
     part_key % 2 << hash_bits
 }
 
-fn independent_output(num_threads: i32, num_hash_bits: i32) {
+fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i32) {
     //coordination of input tuples to each thread is necessary
     //suggestion: divide input in num_threads blocks and assign
 
@@ -88,7 +90,7 @@ fn independent_output(num_threads: i32, num_hash_bits: i32) {
     //where b is the number of hash bits
     //do hash key % hash bits
     //where hash bits is 1-18
-    let N: i32 = 90000000; //placeholder -> replace with
+    let N = data.len() as i32; 
     let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
     let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
