@@ -41,7 +41,7 @@ fn main() -> io::Result<()> {
                 );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./2to24.data");
+                    let data = read_data("./test.data");
                     independent_output(data, num_threads, num_hash_bits);
                 },
                 2 => count_then_move(num_threads, num_hash_bits),
@@ -82,64 +82,24 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 }
 
 fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i32) {
-    //coordination of input tuples to each thread is necessary
-    //suggestion: divide input in num_threads blocks and assign
-
-    //create output buffers for each thread, for each partition
-    //t*(2^b) output buffers
-    //where b is the number of hash bits
-    //do hash key % hash bits
-    //where hash bits is 1-18
     let N = data.len() as i32; 
     let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
     
-    // each thread should just return a buffer, so this is 
-    // redundant -> but should this be done in each thread? yes!
-    //let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
-
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     println!("chunk size: {} given length of data: {}", chunk_size, data.len());
+    let mut handles = Vec::new();
     for thread_number in 0..num_threads {
         let cloned_data = data.clone();
-        let start = (thread_number*(chunk_size as i32)) as usize;
-        let end = ((thread_number+1) * chunk_size as i32) as usize;
-        //let chunks = cloned_data.chunks_exact(chunk_size).collect::<Vec<_>>();
-        //let my_chunk = chunks.collect::<Vec<_>>()[thread_number as usize];
-        
-        // we need to clone and move entire data as to not have issues with 
-        //ownership i.e. chunking before move is bad
         let handle = thread::spawn(move || {
             thread(cloned_data, thread_number, chunk_size as i32, num_hash_bits, buffer_size as usize, num_buffers);
-            //for (key, payload) in my_chunk.clone() {}
         });
-       //handle.join();
+       handles.push(handle);
     }
-    //is is bad practice to not join?
 
-    // for chunk in data.chunks_exact(chunk_size) {
-    //     let handle = thread::spawn(move || {
-    //         for (key, payload) in chunk {
-    //             let hash = hash(*key as i64, 1);
-    //         } 
-    //     });
-    //     handle.join();
-    // }
-
-    // let mut handles = Vec::new();
-    // for thread in 0..num_threads {
-    //     let handle = thread::spawn(move || {
-    //         println!("Hi from thread {}", thread);
-    //     });
-    //     handles.push(handle);
-    // }
-    // for handle in handles {
-    //     handle.join();
-    // }
-
-
+    handles.into_iter().for_each(|handle| handle.join().unwrap());
 }
 
 fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32, hash_bits: i32, buffer_size: usize, num_buffers: i32) {
