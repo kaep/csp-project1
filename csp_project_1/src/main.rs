@@ -115,8 +115,9 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
             thread(cloned_data, thread_number, chunk_size as i32);
             //for (key, payload) in my_chunk.clone() {}
         });
-        handle.join();
     }
+    //is is bad practice to not join?
+
     // for chunk in data.chunks_exact(chunk_size) {
     //     let handle = thread::spawn(move || {
     //         for (key, payload) in chunk {
