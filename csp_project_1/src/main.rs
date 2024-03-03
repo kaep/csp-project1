@@ -76,7 +76,7 @@ fn read_data(file_path: &str) -> Vec<(u64, u64)> {
     tuples
 }
 
-fn hash(part_key: i64, hash_bits: i64) -> i64 {
+fn hash(part_key: i64, hash_bits: i32) -> i64 {
     //partitioning key is 8 byte aka 64 bits
     part_key % 2 << hash_bits
 }
@@ -112,7 +112,7 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
         // we need to clone and move entire data as to not have issues with 
         //ownership i.e. chunking before move is bad
         let handle = thread::spawn(move || {
-            thread(cloned_data, thread_number, chunk_size as i32);
+            thread(cloned_data, thread_number, chunk_size as i32, num_hash_bits);
             //for (key, payload) in my_chunk.clone() {}
         });
     }
@@ -141,11 +141,11 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
 
 }
 
-fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32) {
+fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32, hash_bits: i32) {
     //downside: last chunk will be larger when size is not divisible by amount of threads
     let my_chunk = data.chunks(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
     for (key, payload) in my_chunk {
-        let hash = hash(*key as i64, 1);
+        let hash = hash(*key as i64, hash_bits);
         println!("Thread {} hashed key {} into {}", thread_number, key, hash);
     }
 }
