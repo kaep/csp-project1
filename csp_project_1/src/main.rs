@@ -3,7 +3,7 @@ use rand::Rng;
 use std::{
     env,
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, Read, Write}, thread,
 };
 
 #[derive(Parser)]
@@ -94,6 +94,33 @@ fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i3
     let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
     let buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
+    // are we gonna have a problem with ownership and 32 threads writing to the same vec?
+
+    // we need to account for non-divisible data sizes somehow?
+    // maybe see PCPP code
+    let chunk_size = data.len() / num_threads as usize;
+    println!("chunk size: {} given length of data: {}", chunk_size, data.len());
+    for chunk in data.chunks_exact(chunk_size) {
+        let handle = thread::spawn(move || {
+            for (key, payload) in chunk {
+                let hash = hash(*key as i64, 1);
+            } 
+        });
+        //handle.join();
+    }
+
+    // let mut handles = Vec::new();
+    // for thread in 0..num_threads {
+    //     let handle = thread::spawn(move || {
+    //         println!("Hi from thread {}", thread);
+    //     });
+    //     handles.push(handle);
+    // }
+    // for handle in handles {
+    //     handle.join();
+    // }
+
+
 }
 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {}
