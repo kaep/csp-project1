@@ -1,7 +1,7 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    env, fs::{self, File}, io::{self, Read, Write}, sync::Arc, thread
+    fs::{self, File}, io::{self, Write}, sync::Arc, thread
 };
 
 #[derive(Parser)]
