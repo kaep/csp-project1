@@ -33,6 +33,7 @@ fn main() -> io::Result<()> {
             num_hash_bits,
             partitioning_method,
         } => {
+                println!("How many logical cores? {}", core_affinity::get_core_ids().unwrap().len());
                 println!(
                     "#threads {} #bits {} #part method{}",
                     num_threads, num_hash_bits, partitioning_method
