@@ -80,24 +80,20 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 }
 
 
-// We can use Arc here to avoid cloning the ved
-// but we will still have to compute the chunks multiple times, which is 
-// not very efficient... 
+// I really dont know if all of this Arc'ing is necessary
+// given the change to scoped threads
 fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
     let N = data.len() as i32; 
     let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
-    
 
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     
-    
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
-    
     thread::scope(|s| {
         for thread_number in 0..num_threads {
             let cloned_chunks = Arc::clone(&chunks);
