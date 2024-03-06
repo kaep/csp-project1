@@ -50,14 +50,6 @@ fn main() -> io::Result<()> {
             Ok(())
         }
     }?;
-
-
-    //DATA GENERATION
-    //we need to do it ourselves
-    //and do it in a way where reading from disk
-    //is NOT included in our measurements e.g.
-    //generate just before experiement or make sure
-    //that it is read into memory (not streamed) just before
     Ok(())
 }
 
@@ -121,6 +113,7 @@ fn thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, 
 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {
     println!("Running count then move on data cardinality {} with {} threads and {} hash bits", 42, num_threads, num_hash_bits);
+    //maybe refcell can be useful here?
 }
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
