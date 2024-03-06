@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    fs::{self, File}, io::{self, Write}, sync::Arc, thread
+    fs::{self, File}, io::{self, Write}, sync::Arc, thread, time::Instant
 };
+use std::time;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -84,8 +85,10 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 // I really dont know if all of this Arc'ing is necessary
 // given the change to scoped threads
 fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
-    let N = data.len() as i32; 
-    let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
+    let start = Instant::now();
+    println!("Running independent output on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
+    let n = data.len() as i32; 
+    let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
 
     // we need to account for non-divisible data sizes somehow?
@@ -103,18 +106,22 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
             });
         }
     });
+    let elapsed_time = start.elapsed();
+    println!("Independent output processed {} tuples in {} seconds", data.len(), elapsed_time.as_secs_f64());
 }
 
 fn thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
     let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
-        println!("Thread {} hashed key {} into {}", thread_number, key, hash);
+        //println!("Thread {} hashed key {} into {}", thread_number, key, hash);
         buffers[hash as usize].push(*payload);
     }
 }
 
-fn count_then_move(num_threads: i32, num_hash_bits: i32) {}
+fn count_then_move(num_threads: i32, num_hash_bits: i32) {
+    println!("Running count then move on data cardinality {} with {} threads and {} hash bits", 42, num_threads, num_hash_bits);
+}
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
     println!("Writing {} tuples to {}...", size, file);
