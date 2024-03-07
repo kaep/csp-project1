@@ -74,6 +74,25 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 }
 
 
+fn pinning_example(num_threads: i32) {
+    let core_ids = Arc::new(core_affinity::get_core_ids().unwrap());
+    let num_available_cores = core_ids.len();
+    thread::scope(|scope| {
+        for thread_number in 0..num_threads {
+            let cloned_core_ids = core_ids.clone();
+            scope.spawn(move || {
+                let thread_number = thread_number;
+                //evenly distribute on all available cores
+                let res = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
+             
+                //pinning was successfull
+                if res {
+                }
+            });
+        }
+    });
+}
+
 // I really dont know if all of this Arc'ing is necessary
 // given the change to scoped threads
 fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
@@ -114,6 +133,9 @@ fn thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, 
 fn count_then_move(num_threads: i32, num_hash_bits: i32) {
     println!("Running count then move on data cardinality {} with {} threads and {} hash bits", 42, num_threads, num_hash_bits);
     //maybe refcell can be useful here?
+
+
+
 }
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
