@@ -1,10 +1,9 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    env,
-    fs::{self, File},
-    io::{self, Read, Write}, thread,
+    fs::{self, File}, io::{self, Write}, sync::Arc, thread, time::Instant
 };
+use std::time;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -35,6 +34,7 @@ fn main() -> io::Result<()> {
             num_hash_bits,
             partitioning_method,
         } => {
+                println!("How many logical cores? {}", core_affinity::get_core_ids().unwrap().len());
                 println!(
                     "#threads {} #bits {} #part method{}",
                     num_threads, num_hash_bits, partitioning_method
@@ -42,7 +42,7 @@ fn main() -> io::Result<()> {
             match partitioning_method {
                 1 => {
                     let data = read_data("./test.data");
-                    independent_output(data, num_threads, num_hash_bits);
+                    independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => count_then_move(num_threads, num_hash_bits),
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
@@ -50,14 +50,6 @@ fn main() -> io::Result<()> {
             Ok(())
         }
     }?;
-
-
-    //DATA GENERATION
-    //we need to do it ourselves
-    //and do it in a way where reading from disk
-    //is NOT included in our measurements e.g.
-    //generate just before experiement or make sure
-    //that it is read into memory (not streamed) just before
     Ok(())
 }
 
@@ -81,40 +73,70 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
     part_key % (2 << hash_bits)
 }
 
-fn independent_output(data: Vec<(u64, u64)>, num_threads: i32, num_hash_bits: i32) {
-    let N = data.len() as i32; 
-    let buffer_size: i32 = N / (num_threads * (2 << num_hash_bits));
+
+fn pinning_example(num_threads: i32) {
+    let core_ids = Arc::new(core_affinity::get_core_ids().unwrap());
+    let num_available_cores = core_ids.len();
+    thread::scope(|scope| {
+        for thread_number in 0..num_threads {
+            let cloned_core_ids = core_ids.clone();
+            scope.spawn(move || {
+                let thread_number = thread_number;
+                //evenly distribute on all available cores
+                let res = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
+             
+                //pinning was successfull
+                if res {
+                }
+            });
+        }
+    });
+}
+
+// I really dont know if all of this Arc'ing is necessary
+// given the change to scoped threads
+fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
+    let start = Instant::now();
+    println!("Running independent output on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
+    let n = data.len() as i32; 
+    let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
-    
+
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
-    println!("chunk size: {} given length of data: {}", chunk_size, data.len());
-    let mut handles = Vec::new();
-    for thread_number in 0..num_threads {
-        let cloned_data = data.clone();
-        let handle = thread::spawn(move || {
-            thread(cloned_data, thread_number, chunk_size as i32, num_hash_bits, buffer_size as usize, num_buffers);
-        });
-       handles.push(handle);
-    }
+    
+    let cloned = Arc::clone(&data);
+    let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
-    handles.into_iter().for_each(|handle| handle.join().unwrap());
+    thread::scope(|s| {
+        for thread_number in 0..num_threads {
+            let cloned_chunks = Arc::clone(&chunks);
+            s.spawn(move || {
+                thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
+            });
+        }
+    });
+    let elapsed_time = start.elapsed();
+    println!("Independent output processed {} tuples in {} seconds", data.len(), elapsed_time.as_secs_f64());
 }
 
-fn thread(data: Vec<(u64, u64)>, thread_number: i32, chunk_size: i32, hash_bits: i32, buffer_size: usize, num_buffers: i32) {
-    //downside: last chunk will be larger when size is not divisible by amount of threads
-    let my_chunk = data.chunks(chunk_size as usize).collect::<Vec<_>>()[thread_number as usize];
+fn thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
     let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
-
-    for (key, payload) in my_chunk {
-        let hash = hash(*key as i64, hash_bits);
-        println!("Thread {} hashed key {} into {}", thread_number, key, hash);
+    for (key, payload) in chunk[thread_number as usize] {
+        let hash = hash(*key as i64, num_hash_bits);
+        //println!("Thread {} hashed key {} into {}", thread_number, key, hash);
         buffers[hash as usize].push(*payload);
     }
 }
 
-fn count_then_move(num_threads: i32, num_hash_bits: i32) {}
+fn count_then_move(num_threads: i32, num_hash_bits: i32) {
+    println!("Running count then move on data cardinality {} with {} threads and {} hash bits", 42, num_threads, num_hash_bits);
+    //maybe refcell can be useful here?
+
+
+
+}
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
     println!("Writing {} tuples to {}...", size, file);
