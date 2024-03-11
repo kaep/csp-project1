@@ -1,9 +1,13 @@
 use clap::{Parser, Subcommand};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::Rng;
 use std::{
-    fs::{self, File}, io::{self, Write}, sync::Arc, thread, time::Instant
+    fs::{self, File}, io::{self, Write}, sync::Arc, thread::{self,}, time::Instant
 };
+use perfcnt::linux::PerfCounterBuilderLinux as Builder;
 use std::time;
+use perfcnt::linux::HardwareEventType as Hardware;
+use criterion_perf_events::Perf;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -41,8 +45,17 @@ fn main() -> io::Result<()> {
                 );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./test.data");
-                    independent_output(Arc::new(data), num_threads, num_hash_bits);
+                    //let data = read_data("./test.data");
+
+                    criterion_group!(
+                        name = instructions_bench;
+                        config = Criterion::default().with_measurement(Perf::new(Builder::from_hardware_event(Hardware::Instructions)));
+                        targets = independent_bench_test
+                    );
+                    criterion_main!(instructions_bench);
+                    //need some manual config to use params in method that is target?
+                    // -> se besked fra Ahmad ift. param måske?
+                    //independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => count_then_move(num_threads, num_hash_bits),
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
@@ -51,6 +64,13 @@ fn main() -> io::Result<()> {
         }
     }?;
     Ok(())
+}
+
+fn independent_bench_test(c: &mut Criterion<Perf>) {
+    let mut group = c.benchmark_group("Independent output test ");
+    group.bench_function(BenchmarkId::new("testifesti", 42), |b| {
+        //b.iter(|| independent_output(data, num_threads, num_hash_bits))
+    });
 }
 
 fn read_data(file_path: &str) -> Vec<(u64, u64)> {
