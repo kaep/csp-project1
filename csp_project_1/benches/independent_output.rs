@@ -43,6 +43,7 @@ fn bench_no_pinning(c: &mut Criterion<Perf>) {
 
 criterion_group!(
     name = independent_no_pin;
+    //chaining more "with_measurement` is possible
     config = Criterion::default().with_measurement(Perf::new(Builder::from_hardware_event(Hardware::CacheMisses)));
     targets = very_simple_bench
 );
