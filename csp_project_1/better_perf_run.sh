@@ -1,4 +1,4 @@
-for part_method in 1 2;
+for part_method in 1 2 3 4;
 do 
 	for num_threads in 1 2 4 8 16 32 
 	do
