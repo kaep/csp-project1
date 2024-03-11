@@ -1,8 +1,10 @@
+
+#![allow(unused)]
 #![feature(sync_unsafe_cell)]
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
+    borrow::BorrowMut, cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
 };
 use std::time;
 use std::sync::atomic::AtomicU64;
@@ -223,9 +225,19 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
                     // hash is index into buffers
                     buffers[hash as usize].1.fetch_add(1, Relaxed);
                     let counter = buffers[hash as usize].1.load(Relaxed); 
+                    let (vec, counter) = &buffers[hash as usize];
                     unsafe {
+                        *((*vec.get())).get_unchecked_mut(counter.as_ptr() as usize) = (*key, *payload);
+                        //let banan = &buffers[hash as usize].0;
+                        //banan.into_inner()[counter] = (*key, *payload);
+                        //let vector = *&buffers[hash as usize].0;
+                        //vector.into_inner()[counter] = (*key, *payload);
+                        //&buffers[hash as usize].0.into_inner()[counter] = &(*key, *payload);
                         //let vector = buffers[hash as usize].0.get_mut()[counter] = (*key, *payload);
-                        let vector = buffers[hash as usize].0;
+                        //let vector = buffers.get(hash as usize).unwrap().0;
+                        
+                        //let vector = buffers[hash as usize].0.into_inner();
+                        //let vector = SyncUnsafeCell::<Vec<(u64, u64)>>::raw_get(buffers[hash as usize);
                         //vector.get_mut()[counter] = (*key, *payload);   
                     }
 
