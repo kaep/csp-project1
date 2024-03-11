@@ -51,7 +51,9 @@ fn main() -> io::Result<()> {
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as f32;
-                    let buffer_size = (n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5;
+                    let numerator = num_threads * i32::pow(2, num_hash_bits as u32);
+                    let buffer_size = ((n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5).ceil();
+                    println!("data length {} with buffer size {} and numerator {}", n, buffer_size, numerator);
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
                 },
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
@@ -191,6 +193,7 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
 fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
+    println!("num partitions {}", num_partitions);
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
@@ -212,6 +215,8 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
 
     println!("Concurrent output buffer size {}", buffer_size);
 
+    // we have a problem with more than 12 hash bits atm.
+    // when there are fewer buckets than elements, we are attempting to do something bad? 
     thread::scope(|s| {
         for thread_number in 0..num_threads {
             let cloned_chunks = Arc::clone(&chunks);
@@ -228,15 +233,16 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
 
                     // hash is index into buffers
                     
-                    let counter = buffers[hash as usize].1.load(Relaxed); 
+                    //let counter = buffers[hash as usize].1.load(Relaxed); 
                     let (vec, counter) = &buffers[hash as usize];
                     unsafe {
-                        if counter.as_ptr() as usize > (*vec.get()).len() {
-                            //println!("something wong, counter is {:?}", *(counter.as_ptr()));
+                        if *counter.as_ptr() >= (*vec.get()).len() {
+                            println!("Counter {} is above vec length {}", *counter.as_ptr(), (*vec.get()).len());
                         }
+                        //println!("Counter for hash: {} is : {}", hash, *counter.as_ptr());
                         //println!("Counter is {:?}", counter);
                         //println!("{}", (*vec.get()).len());
-                        *(*vec.get()).get_unchecked_mut(*(counter.as_ptr())) = (*key, *payload);
+                        *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
                     }
                     buffers[hash as usize].1.fetch_add(1, Relaxed);
                 }
