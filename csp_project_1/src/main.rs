@@ -39,10 +39,10 @@ fn main() -> io::Result<()> {
             partitioning_method,
         } => {
                 //println!("How many logical cores? {}", core_affinity::get_core_ids().unwrap().len());
-                println!(
-                    "#threads {} #bits {} part method{}",
-                    num_threads, num_hash_bits, partitioning_method
-                );
+                // println!(
+                //     "#threads {} #bits {} part method{}",
+                //     num_threads, num_hash_bits, partitioning_method
+                // );
             match partitioning_method {
                 1 => {
                     let data = read_data("./test.data");
@@ -94,7 +94,6 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 
 fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
     let start = Instant::now();
-    println!("Running independent output with pinning on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
     let n = data.len() as i32; 
     let buffer_size: i32 = n / (num_threads * i32::pow(2, num_hash_bits as u32));
     let num_buffers: i32 = num_threads * i32::pow(2, num_hash_bits as u32);
@@ -130,8 +129,6 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
 // I really dont know if all of this Arc'ing is necessary
 // given the change to scoped threads
 fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
-    let start = Instant::now();
-    println!("Running independent output on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
     let n = data.len() as i32; 
     let buffer_size = (n as f32 / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil();
     let num_buffers: i32 = num_threads * i32::pow(2, num_hash_bits as u32);
@@ -151,8 +148,6 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
             });
         }
     });
-    let elapsed_time = start.elapsed();
-    println!("Independent output processed {} tuples in {} seconds", data.len(), elapsed_time.as_secs_f64());
 }
 
 fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
@@ -167,7 +162,6 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
 fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
-    println!("num partitions {}", num_partitions);
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
@@ -187,9 +181,6 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
                     let hash = hash(*key as i64, num_hash_bits);
                     let (vec, counter) = &buffers[hash as usize];
                     unsafe {
-                        if *counter.as_ptr() >= (*vec.get()).len() {
-                            println!("Counter {} is above vec length {}", *counter.as_ptr(), (*vec.get()).len());
-                        }
                         *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
                     }
                     buffers[hash as usize].1.fetch_add(1, Relaxed);
@@ -202,7 +193,6 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
 fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
-    println!("num partitions {}", num_partitions);
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
@@ -230,9 +220,6 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
                         let hash = hash(*key as i64, num_hash_bits);
                         let (vec, counter) = &buffers[hash as usize];
                         unsafe {
-                            if *counter.as_ptr() >= (*vec.get()).len() {
-                                println!("Counter {} is above vec length {}", *counter.as_ptr(), (*vec.get()).len());
-                            }
                             *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
                         }
                         buffers[hash as usize].1.fetch_add(1, Relaxed);
