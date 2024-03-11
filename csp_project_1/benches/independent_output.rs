@@ -8,6 +8,21 @@ use perfcnt::linux::PerfCounterBuilderLinux as Builder;
 use utils::read_data;
 mod utils;
 
+fn very_simple_bench(c: &mut Criterion<Perf>) {
+    let mut group = c.benchmark_group("Simple bench");
+    let data = Arc::new(read_data("./test.data"));
+    let input = utils::Input {
+        data: data.clone(),
+        num_threads: 2,
+        num_hash_bits: 2
+    };
+
+    group.bench_function(BenchmarkId::from_parameter("Banan"), |b| {
+        b.iter(|| independent(input.clone()));
+    });
+    group.finish();
+}
+
 fn bench_no_pinning(c: &mut Criterion<Perf>) {
     let mut group = c.benchmark_group("Independent output");
     let data = Arc::new(read_data("./test.data"));
@@ -29,7 +44,7 @@ fn bench_no_pinning(c: &mut Criterion<Perf>) {
 criterion_group!(
     name = independent_no_pin;
     config = Criterion::default().with_measurement(Perf::new(Builder::from_hardware_event(Hardware::CacheMisses)));
-    targets = bench_no_pinning
+    targets = very_simple_bench
 );
 
 criterion_main!(independent_no_pin);
