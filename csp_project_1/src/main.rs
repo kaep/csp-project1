@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    fs::{self, File}, io::{self, Write}, sync::Arc, thread, time::Instant
+    fs::{self, File}, io::{self, Write}, sync::{atomic::Ordering::Relaxed, Arc}, thread, time::Instant
 };
 use std::time;
+use std::sync::atomic::AtomicU64;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -34,9 +35,9 @@ fn main() -> io::Result<()> {
             num_hash_bits,
             partitioning_method,
         } => {
-                println!("How many logical cores? {}", core_affinity::get_core_ids().unwrap().len());
+                //println!("How many logical cores? {}", core_affinity::get_core_ids().unwrap().len());
                 println!(
-                    "#threads {} #bits {} #part method{}",
+                    "#threads {} #bits {} part method{}",
                     num_threads, num_hash_bits, partitioning_method
                 );
             match partitioning_method {
@@ -44,7 +45,12 @@ fn main() -> io::Result<()> {
                     let data = read_data("./test.data");
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
-                2 => count_then_move(num_threads, num_hash_bits),
+                2 => {
+                    let data = read_data("./test.data");
+                    let n = data.len() as i32;
+                    let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
+                    concurrent_output(num_hash_bits, buffer_size, num_threads)
+                },
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
             Ok(())
@@ -70,7 +76,7 @@ fn read_data(file_path: &str) -> Vec<(u64, u64)> {
 
 fn hash(part_key: i64, hash_bits: i32) -> i64 {
     //partitioning key is 8 byte aka 64 bits
-    part_key % (2 << hash_bits)
+    part_key % (2 << hash_bits) //TODO: is this correct?
 }
 
 
@@ -166,13 +172,24 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
     }
 }
 
-fn count_then_move(num_threads: i32, num_hash_bits: i32) {
-    println!("Running count then move on data cardinality {} with {} threads and {} hash bits", 42, num_threads, num_hash_bits);
-    //maybe refcell can be useful here?
+fn concurrent_output(num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
+    //b hash bits gives 2^b output partitions
+    let num_partitions = i32::pow(2, num_hash_bits as u32);
+    let buffer: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_partitions as usize]; 
+    //atomic u64 atm. consider whether size can be decreased 
+    let atomic_counter = Arc::new(AtomicU64::new(0));
 
 
-
+    thread::scope(|s| {
+        for thread_number in 0..num_threads {
+            s.spawn(|| {
+                atomic_counter.fetch_add(1, Relaxed);
+            });
+        }
+    });
+    println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
 }
+
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
     println!("Writing {} tuples to {}...", size, file);
