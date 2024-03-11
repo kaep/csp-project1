@@ -56,6 +56,14 @@ fn main() -> io::Result<()> {
                     println!("data length {} with buffer size {} and numerator {}", n, buffer_size, numerator);
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
                 },
+                // pinning 
+                3 => { 
+                    let data = read_data("./test.data");
+                    independent_output_pinning(Arc::new(data), num_threads, num_hash_bits) 
+                },
+                4 => {
+                    //concurrent_output_pinning(data, num_hash_bits, buffer_size, num_threads)
+                }
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
             Ok(())
@@ -128,10 +136,10 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
             scope.spawn(move || {
                 let thread_number = thread_number;
                 //evenly distribute on all available cores
-                let res = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
+                let thread_pinned_succesfully = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
              
                 //pinning was successfull
-                if res {
+                if thread_pinned_succesfully {
                     independent_output_thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
                 }
             });
@@ -181,15 +189,7 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
     }
 }
 
-// this is still chunking right?
-// yes: only output needs sync
-// but how to write to output?
-// seems like the paper uses a single contigous buffer
-// but how do we know where the "lines" between partitions go then?
-// aah no, still need 2^b buffers aka one for each output partition
-// counter is for each of the buffers..
-// we need to init all of the vectors beforehand, as we wont be able to index
-// into them without
+
 fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
@@ -198,50 +198,24 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
-    //let buffers: Vec<(UnsafeCell<Vec<(u64, u64)>>, AtomicU64)>
-    // atomic u64 atm. consider whether size can be decreased  -> just usize
-    // we need as many counters as there are buffers though!
-    // a possible way to circumvent arc in counter is: Vec<UnsafeCell<Vec<tuple>>, AtomicCounter>
-    // buffer should be shareable.. unsafecell?
-
-    //mut could be dropped but the vec! macro is complaining about something clone-related, so lets just do it this way
     let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
-    //let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = vec![(SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)); num_partitions as usize];
-
     // init / allocate all buffers beforehand
     for _ in 0..num_partitions {
          buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
     }
 
-    println!("Concurrent output buffer size {}", buffer_size);
-
-    // we have a problem with more than 12 hash bits atm.
-    // when there are fewer buckets than elements, we are attempting to do something bad? 
     thread::scope(|s| {
         for thread_number in 0..num_threads {
             let cloned_chunks = Arc::clone(&chunks);
-            //this variable shadowing/aliasing stuff is necessary to explicitly tell the compiler that the thread is getting an 
-            // immmutable reference
-            // both the inner vec and counter are still mutable though (with some unsafe)
             let buffers = &buffers;
             s.spawn(move || {
-                //concurrent_output_thread(cloned_chunks, buffers, thread_number, num_hash_bits);
-                //atomic_counter.fetch_add(1, Relaxed);
                 for (key, payload) in cloned_chunks[thread_number as usize] {
                     let hash = hash(*key as i64, num_hash_bits);
-                    //println!("Hashed {} into {}", *key, hash);
-
-                    // hash is index into buffers
-                    
-                    //let counter = buffers[hash as usize].1.load(Relaxed); 
                     let (vec, counter) = &buffers[hash as usize];
                     unsafe {
                         if *counter.as_ptr() >= (*vec.get()).len() {
                             println!("Counter {} is above vec length {}", *counter.as_ptr(), (*vec.get()).len());
                         }
-                        //println!("Counter for hash: {} is : {}", hash, *counter.as_ptr());
-                        //println!("Counter is {:?}", counter);
-                        //println!("{}", (*vec.get()).len());
                         *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
                     }
                     buffers[hash as usize].1.fetch_add(1, Relaxed);
@@ -249,8 +223,52 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
             });
         }
     });
-    //println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
 }
+
+fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
+    //b hash bits gives 2^b output partitions
+    let num_partitions = i32::pow(2, num_hash_bits as u32);
+    println!("num partitions {}", num_partitions);
+    let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
+    let cloned = Arc::clone(&data);
+    let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
+
+    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
+    // init / allocate all buffers beforehand
+    for _ in 0..num_partitions {
+         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
+    }
+
+    let core_ids = Arc::new(core_affinity::get_core_ids().unwrap());
+    let num_available_cores = core_ids.len();
+
+    thread::scope(|s| {
+        for thread_number in 0..num_threads {
+            let cloned_chunks = Arc::clone(&chunks);
+            let cloned_core_ids = core_ids.clone();
+            let buffers = &buffers;
+            s.spawn(move || {
+                let thread_number = thread_number;
+                let thread_pinned_succesfully = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
+
+                if thread_pinned_succesfully {
+                    for (key, payload) in cloned_chunks[thread_number as usize] {
+                        let hash = hash(*key as i64, num_hash_bits);
+                        let (vec, counter) = &buffers[hash as usize];
+                        unsafe {
+                            if *counter.as_ptr() >= (*vec.get()).len() {
+                                println!("Counter {} is above vec length {}", *counter.as_ptr(), (*vec.get()).len());
+                            }
+                            *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
+                        }
+                        buffers[hash as usize].1.fetch_add(1, Relaxed);
+                    }
+                }
+            });
+        }
+    });
+}
+
 
 fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, output: Vec<(Vec<(u64, u64)>, AtomicUsize)>, thread_number: i32, num_hash_bits: i32) {
 
