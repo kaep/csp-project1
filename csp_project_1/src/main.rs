@@ -1,7 +1,8 @@
+#![feature(sync_unsafe_cell)]
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    cell::UnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
+    cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
 };
 use std::time;
 use std::sync::atomic::AtomicU64;
@@ -187,36 +188,59 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
     let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
-    let chunks = Arc::new(data.clone().chunks(chunk_size as usize).collect::<Vec<_>>());
+    let cloned = Arc::clone(&data);
+    let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
     //let buffers: Vec<(UnsafeCell<Vec<(u64, u64)>>, AtomicU64)>
     // atomic u64 atm. consider whether size can be decreased  -> just usize
     // we need as many counters as there are buffers though!
     // a possible way to circumvent arc in counter is: Vec<UnsafeCell<Vec<tuple>>, AtomicCounter>
     // buffer should be shareable.. unsafecell?
-    let mut buffers: Vec<(Vec<(u64, u64)>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
-    
+
+    //mut could be dropped but the vec! macro is complaining about something clone-related, so lets just do it this way
+    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
+    //let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = vec![(SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)); num_partitions as usize];
+
     // init / allocate all buffers beforehand
-    for _ in 0..num_partitions {
-        buffers.push((vec![(0u64, 0u64); buffer_size as usize], AtomicUsize::new(0)));
+     for _ in 0..num_partitions {
+         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
     }
 
 
     thread::scope(|s| {
         for thread_number in 0..num_threads {
-            s.spawn(|| {
+            let cloned_chunks = Arc::clone(&chunks);
+            //this variable shadowing/aliasing stuff is necessary to explicitly tell the compiler that the thread is getting an 
+            // immmutable reference
+            // both the inner vec and counter are still mutable though (with some unsafe)
+            let buffers = &buffers;
+            s.spawn(move || {
+                //concurrent_output_thread(cloned_chunks, buffers, thread_number, num_hash_bits);
                 //atomic_counter.fetch_add(1, Relaxed);
+                for (key, payload) in cloned_chunks[thread_number as usize] {
+                    let hash = hash(*key as i64, num_hash_bits);
+
+                    // hash is index into buffers
+                    buffers[hash as usize].1.fetch_add(1, Relaxed);
+                    let counter = buffers[hash as usize].1.load(Relaxed); 
+                    unsafe {
+                        //let vector = buffers[hash as usize].0.get_mut()[counter] = (*key, *payload);
+                        let vector = buffers[hash as usize].0;
+                        //vector.get_mut()[counter] = (*key, *payload);   
+                    }
+
+
+                }
             });
         }
     });
     //println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
 }
 
-fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, thread_number: i32, num_hash_bits: i32, counter: Arc<AtomicU64>) {
+fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, output: Vec<(Vec<(u64, u64)>, AtomicUsize)>, thread_number: i32, num_hash_bits: i32) {
 
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
-        //write to buffer somehow.. still need args
     }
 
 }
