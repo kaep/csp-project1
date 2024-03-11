@@ -1,6 +1,6 @@
 use std::{sync::Arc, thread, time::Instant};
 
-use criterion::BenchmarkId;
+use criterion::{criterion_main, BenchmarkId};
 use criterion::{criterion_group, Criterion};
 use criterion_perf_events::Perf;
 use perfcnt::linux::HardwareEventType as Hardware;
@@ -10,15 +10,16 @@ mod utils;
 
 fn bench_no_pinning(c: &mut Criterion<Perf>) {
     let mut group = c.benchmark_group("Independent output");
-    let data = read_data("./test.data");
+    let data = Arc::new(read_data("./test.data"));
     for num_threads in [1, 2, 4, 8, 16, 32].iter() {
         for num_hash_bits in 0..18 {
             let input = utils::Input {
+                data: data.clone(),
                 num_threads: *num_threads as i32,
                 num_hash_bits
             };
-            group.bench_with_input(BenchmarkId::from_parameter(num_threads), &input, |b, &input| {
-                indepenent_lol(input);
+            group.bench_with_input(BenchmarkId::from_parameter(num_threads*num_hash_bits), &input, |b, input| {
+                b.iter(|| independent(input.clone()));
             });
         }
     }
@@ -30,6 +31,33 @@ criterion_group!(
     config = Criterion::default().with_measurement(Perf::new(Builder::from_hardware_event(Hardware::CacheMisses)));
     targets = bench_no_pinning
 );
+
+criterion_main!(independent_no_pin);
+
+fn independent(input: utils::Input) {
+    let num_threads = input.num_threads;
+    let num_hash_bits = input.num_hash_bits;
+    let data = input.data;
+    let n = data.len() as i32; 
+    let buffer_size = (n as f32 / (num_threads * (2 << num_hash_bits)) as f32).ceil();
+    let num_buffers: i32 = num_threads * (2 << num_hash_bits);
+
+    // we need to account for non-divisible data sizes somehow?
+    // maybe see PCPP code
+    let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
+    
+    let cloned = Arc::clone(&data);
+    let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
+
+    thread::scope(|s| {
+        for thread_number in 0..num_threads {
+            let cloned_chunks = Arc::clone(&chunks);
+            s.spawn(move || {
+                independent_output_thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
+            });
+        }
+    });
+}
 
 fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
     let start = Instant::now();
@@ -66,35 +94,6 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
 
 }
 
-
-// I really dont know if all of this Arc'ing is necessary
-// given the change to scoped threads
-fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
-    let start = Instant::now();
-    println!("Running independent output on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
-    let n = data.len() as i32; 
-    let buffer_size = (n as f32 / (num_threads * (2 << num_hash_bits)) as f32).ceil();
-    println!("Buffer size {}", buffer_size);
-    let num_buffers: i32 = num_threads * (2 << num_hash_bits);
-
-    // we need to account for non-divisible data sizes somehow?
-    // maybe see PCPP code
-    let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
-    
-    let cloned = Arc::clone(&data);
-    let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
-
-    thread::scope(|s| {
-        for thread_number in 0..num_threads {
-            let cloned_chunks = Arc::clone(&chunks);
-            s.spawn(move || {
-                independent_output_thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
-            });
-        }
-    });
-    let elapsed_time = start.elapsed();
-    println!("Independent output processed {} tuples in {} seconds", data.len(), elapsed_time.as_secs_f64());
-}
 
 fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
     let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size]; num_buffers as usize];

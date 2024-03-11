@@ -1,7 +1,8 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Input {
+    pub data: Arc<Vec<(u64, u64)>>,
     pub num_threads: i32,
     pub num_hash_bits: i32
 }
