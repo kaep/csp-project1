@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    fs::{self, File}, io::{self, Write}, sync::{atomic::Ordering::Relaxed, Arc}, thread, time::Instant
+    cell::UnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
 };
 use std::time;
 use std::sync::atomic::AtomicU64;
@@ -168,6 +168,8 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
         //println!("Thread {} hashed key {} into {}", thread_number, key, hash);
+        
+        //TODO: we need to allocate vec beforehand!
         buffers[hash as usize].push(*payload);
     }
 }
@@ -175,26 +177,39 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
 // this is still chunking right?
 // yes: only output needs sync
 // but how to write to output?
+// seems like the paper uses a single contigous buffer
+// but how do we know where the "lines" between partitions go then?
+// aah no, still need 2^b buffers aka one for each output partition
+// counter is for each of the buffers..
+// we need to init all of the vectors beforehand, as we wont be able to index
+// into them without
 fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
+    let chunk_size = (data.len() as f32 / num_threads as f32).ceil();
+    let chunks = Arc::new(data.clone().chunks(chunk_size as usize).collect::<Vec<_>>());
 
+    //let buffers: Vec<(UnsafeCell<Vec<(u64, u64)>>, AtomicU64)>
+    // atomic u64 atm. consider whether size can be decreased  -> just usize
+    // we need as many counters as there are buffers though!
+    // a possible way to circumvent arc in counter is: Vec<UnsafeCell<Vec<tuple>>, AtomicCounter>
     // buffer should be shareable.. unsafecell?
-    let buffer: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_partitions as usize]; 
-
-
-    //atomic u64 atm. consider whether size can be decreased 
-    let atomic_counter = Arc::new(AtomicU64::new(0));
+    let mut buffers: Vec<(Vec<(u64, u64)>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
+    
+    // init / allocate all buffers beforehand
+    for _ in 0..num_partitions {
+        buffers.push((vec![(0u64, 0u64); buffer_size as usize], AtomicUsize::new(0)));
+    }
 
 
     thread::scope(|s| {
         for thread_number in 0..num_threads {
             s.spawn(|| {
-                atomic_counter.fetch_add(1, Relaxed);
+                //atomic_counter.fetch_add(1, Relaxed);
             });
         }
     });
-    println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
+    //println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
 }
 
 fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, thread_number: i32, num_hash_bits: i32, counter: Arc<AtomicU64>) {
