@@ -46,10 +46,10 @@ fn main() -> io::Result<()> {
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => {
-                    let data = read_data("./test.data");
+                    let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as i32;
                     let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
-                    concurrent_output(num_hash_bits, buffer_size, num_threads)
+                    concurrent_output(data, num_hash_bits, buffer_size, num_threads)
                 },
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
@@ -172,10 +172,17 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
     }
 }
 
-fn concurrent_output(num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
+// this is still chunking right?
+// yes: only output needs sync
+// but how to write to output?
+fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
     let num_partitions = i32::pow(2, num_hash_bits as u32);
+
+    // buffer should be shareable.. unsafecell?
     let buffer: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_partitions as usize]; 
+
+
     //atomic u64 atm. consider whether size can be decreased 
     let atomic_counter = Arc::new(AtomicU64::new(0));
 
@@ -188,6 +195,15 @@ fn concurrent_output(num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
         }
     });
     println!("concurrent output finished with value of counter: {}", atomic_counter.load(Relaxed));
+}
+
+fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, thread_number: i32, num_hash_bits: i32, counter: Arc<AtomicU64>) {
+
+    for (key, payload) in chunk[thread_number as usize] {
+        let hash = hash(*key as i64, num_hash_bits);
+        //write to buffer somehow.. still need args
+    }
+
 }
 
 
