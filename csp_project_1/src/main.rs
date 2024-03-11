@@ -51,9 +51,7 @@ fn main() -> io::Result<()> {
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as f32;
-                    let numerator = num_threads * i32::pow(2, num_hash_bits as u32);
                     let buffer_size = ((n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5).ceil();
-                    println!("data length {} with buffer size {} and numerator {}", n, buffer_size, numerator);
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
                 },
                 // pinning 
@@ -62,7 +60,10 @@ fn main() -> io::Result<()> {
                     independent_output_pinning(Arc::new(data), num_threads, num_hash_bits) 
                 },
                 4 => {
-                    //concurrent_output_pinning(data, num_hash_bits, buffer_size, num_threads)
+                    let data = Arc::new(read_data("./test.data"));
+                    let n = data.len() as f32;
+                    let buffer_size = ((n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5).ceil();
+                    concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
                 }
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
@@ -88,29 +89,7 @@ fn read_data(file_path: &str) -> Vec<(u64, u64)> {
 }
 
 fn hash(part_key: i64, hash_bits: i32) -> i64 {
-    //partitioning key is 8 byte aka 64 bits
-    //part_key % (2 << hash_bits) //TODO: is this correct?
     part_key % i64::pow(2, hash_bits as u32)
-}
-
-
-fn pinning_example(num_threads: i32) {
-    let core_ids = Arc::new(core_affinity::get_core_ids().unwrap());
-    let num_available_cores = core_ids.len();
-    thread::scope(|scope| {
-        for thread_number in 0..num_threads {
-            let cloned_core_ids = core_ids.clone();
-            scope.spawn(move || {
-                let thread_number = thread_number;
-                //evenly distribute on all available cores
-                let res = core_affinity::set_for_current(cloned_core_ids[thread_number as usize % num_available_cores]);
-             
-                //pinning was successfull
-                if res {
-                }
-            });
-        }
-    });
 }
 
 fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
@@ -182,9 +161,6 @@ fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize,
     let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size]; num_buffers as usize];
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
-        //println!("Thread {} hashed key {} into {}", thread_number, key, hash);
-        
-        //TODO: we need to allocate vec beforehand!
         buffers[hash as usize].push(*payload);
     }
 }
@@ -267,15 +243,6 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
             });
         }
     });
-}
-
-
-fn concurrent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, output: Vec<(Vec<(u64, u64)>, AtomicUsize)>, thread_number: i32, num_hash_bits: i32) {
-
-    for (key, payload) in chunk[thread_number as usize] {
-        let hash = hash(*key as i64, num_hash_bits);
-    }
-
 }
 
 
