@@ -50,9 +50,9 @@ fn main() -> io::Result<()> {
                 },
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
-                    let n = data.len() as i32;
-                    let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
-                    concurrent_output(data, num_hash_bits, buffer_size, num_threads)
+                    let n = data.len() as f32;
+                    let buffer_size = (n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5;
+                    concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
                 },
                 _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
             };
@@ -79,7 +79,8 @@ fn read_data(file_path: &str) -> Vec<(u64, u64)> {
 
 fn hash(part_key: i64, hash_bits: i32) -> i64 {
     //partitioning key is 8 byte aka 64 bits
-    part_key % (2 << hash_bits) //TODO: is this correct?
+    //part_key % (2 << hash_bits) //TODO: is this correct?
+    part_key % i64::pow(2, hash_bits as u32)
 }
 
 
@@ -144,7 +145,8 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
     let start = Instant::now();
     println!("Running independent output on data cardinality {} with {} threads and {} hash bits", data.len(), num_threads, num_hash_bits);
     let n = data.len() as i32; 
-    let buffer_size: i32 = n / (num_threads * (2 << num_hash_bits));
+    let buffer_size = (n as f32 / (num_threads * (2 << num_hash_bits)) as f32).ceil();
+    println!("Buffer size {}", buffer_size);
     let num_buffers: i32 = num_threads * (2 << num_hash_bits);
 
     // we need to account for non-divisible data sizes somehow?
@@ -167,7 +169,7 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
 }
 
 fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
-    let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size as usize]; num_buffers as usize];
+    let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size]; num_buffers as usize];
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
         //println!("Thread {} hashed key {} into {}", thread_number, key, hash);
@@ -204,10 +206,11 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
     //let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = vec![(SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)); num_partitions as usize];
 
     // init / allocate all buffers beforehand
-     for _ in 0..num_partitions {
+    for _ in 0..num_partitions {
          buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
     }
 
+    println!("Concurrent output buffer size {}", buffer_size);
 
     thread::scope(|s| {
         for thread_number in 0..num_threads {
@@ -221,27 +224,21 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
                 //atomic_counter.fetch_add(1, Relaxed);
                 for (key, payload) in cloned_chunks[thread_number as usize] {
                     let hash = hash(*key as i64, num_hash_bits);
+                    //println!("Hashed {} into {}", *key, hash);
 
                     // hash is index into buffers
-                    buffers[hash as usize].1.fetch_add(1, Relaxed);
+                    
                     let counter = buffers[hash as usize].1.load(Relaxed); 
                     let (vec, counter) = &buffers[hash as usize];
                     unsafe {
-                        *((*vec.get())).get_unchecked_mut(counter.as_ptr() as usize) = (*key, *payload);
-                        //let banan = &buffers[hash as usize].0;
-                        //banan.into_inner()[counter] = (*key, *payload);
-                        //let vector = *&buffers[hash as usize].0;
-                        //vector.into_inner()[counter] = (*key, *payload);
-                        //&buffers[hash as usize].0.into_inner()[counter] = &(*key, *payload);
-                        //let vector = buffers[hash as usize].0.get_mut()[counter] = (*key, *payload);
-                        //let vector = buffers.get(hash as usize).unwrap().0;
-                        
-                        //let vector = buffers[hash as usize].0.into_inner();
-                        //let vector = SyncUnsafeCell::<Vec<(u64, u64)>>::raw_get(buffers[hash as usize);
-                        //vector.get_mut()[counter] = (*key, *payload);   
+                        if counter.as_ptr() as usize > (*vec.get()).len() {
+                            //println!("something wong, counter is {:?}", *(counter.as_ptr()));
+                        }
+                        //println!("Counter is {:?}", counter);
+                        //println!("{}", (*vec.get()).len());
+                        *(*vec.get()).get_unchecked_mut(*(counter.as_ptr())) = (*key, *payload);
                     }
-
-
+                    buffers[hash as usize].1.fetch_add(1, Relaxed);
                 }
             });
         }
