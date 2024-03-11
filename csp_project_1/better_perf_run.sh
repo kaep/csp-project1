@@ -1,3 +1,4 @@
+# see changes to this file in server :))
 for part_method in 1 2 3 4;
 do 
 	for num_threads in 1 2 4 8 16 32 
