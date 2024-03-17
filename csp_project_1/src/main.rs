@@ -60,7 +60,7 @@ fn main() -> io::Result<()> {
                     independent_output_pinning(Arc::new(data), num_threads, num_hash_bits) 
                 },
                 4 => {
-                    let data = Arc::new(read_data("./test.data"));
+                    let data = Arc::new(read_data("./2to24.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
@@ -176,17 +176,43 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
             let cloned_chunks = Arc::clone(&chunks);
             let buffers = &buffers;
             s.spawn(move || {
+                println!("Thread # {} has chunk of size {}", thread_number, cloned_chunks[thread_number as usize].len());
                 for (key, payload) in cloned_chunks[thread_number as usize] {
                     let hash = hash(*key as i64, num_hash_bits);
                     let (vec, counter) = &buffers[hash as usize];
-                    unsafe {
-                        *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
+                    loop {
+                        let index = counter.load(Relaxed);
+                        if counter.compare_exchange(index, index+1, Relaxed, Relaxed).is_ok() {
+                            unsafe {
+                                *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                            }
+                            break;
+                        }
                     }
-                    buffers[hash as usize].1.fetch_add(1, Relaxed);
                 }
             });
         }
     });
+    println!("There are {} elements in total", data.len());
+    let mut counter = 0;
+    let mut total_counter = 0;
+    for (buffer, _) in buffers {
+        let mut buffer_counter = 0;
+        // length is not good as we add 50% -> i need to count the elements that are not (0,0)
+        // somehow...
+        //println!("Buffer # {} has {} elements", counter, unsafe { (*buffer.get()).len() } );
+        for (key, _) in unsafe { (&*buffer.get()) } {
+            if *key != 0 {
+                buffer_counter += 1;
+            }
+        }
+
+        println!("Buffer # {} has {} elements", counter, buffer_counter ); // first might be
+        // off-by-one? yes :)
+        counter += 1;
+        total_counter += buffer_counter;
+    }
+    println!("Total counter: {} - should be off-by-one compared to total amount of elements", total_counter);
 }
 
 fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
@@ -218,15 +244,38 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
                     for (key, payload) in cloned_chunks[thread_number as usize] {
                         let hash = hash(*key as i64, num_hash_bits);
                         let (vec, counter) = &buffers[hash as usize];
-                        unsafe {
-                            *(*vec.get()).get_unchecked_mut(*counter.as_ptr()) = (*key, *payload);
+                    loop {
+                        let index = counter.load(Relaxed);
+                            if counter.compare_exchange(index, index+1, Relaxed, Relaxed).is_ok() {
+                                unsafe {
+                                    *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                                }
+                                break;
+                            }
                         }
-                        buffers[hash as usize].1.fetch_add(1, Relaxed);
                     }
                 }
             });
         }
     });
+
+    println!("There are {} elements in total", data.len());
+    let mut counter = 0;
+    for (buffer, _) in buffers {
+        let mut buffer_counter = 0;
+        // length is not good as we add 50% -> i need to count the elements that are not (0,0)
+        // somehow...
+        //println!("Buffer # {} has {} elements", counter, unsafe { (*buffer.get()).len() } );
+        for (key, payload) in unsafe { (&*buffer.get()) } {
+            if *key != 0 && *payload != 0 {
+                buffer_counter += 1;
+            }
+        }
+
+        println!("Buffer # {} has {} elements", counter, buffer_counter ); // first might be
+        // off-by-one?
+        counter += 1;
+    }
 }
 
 
