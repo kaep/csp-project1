@@ -49,9 +49,9 @@ fn main() -> io::Result<()> {
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => {
-                    let data = Arc::new(read_data("./test.data"));
+                    let data = Arc::new(read_data("./2to24.data"));
                     let n = data.len() as f32;
-                    let buffer_size = ((n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5).ceil();
+                    let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
                 },
                 // pinning 
@@ -62,15 +62,14 @@ fn main() -> io::Result<()> {
                 4 => {
                     let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as f32;
-                    let buffer_size = ((n / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil() * 1.5).ceil();
+                    let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
                 }
-                _ => panic!("Invalid partitioning method! Pls give 1 or 2"),
+                _ => panic!("Invalid partitioning method! Pls give 1, 2, 3 or 4"),
             };
             Ok(())
         }
-    }?;
-    Ok(())
+    }?; Ok(())
 }
 
 fn read_data(file_path: &str) -> Vec<(u64, u64)> {
