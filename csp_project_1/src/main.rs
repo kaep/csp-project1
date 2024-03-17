@@ -49,7 +49,7 @@ fn main() -> io::Result<()> {
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => {
-                    let data = Arc::new(read_data("./2to24.data"));
+                    let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
@@ -60,7 +60,7 @@ fn main() -> io::Result<()> {
                     independent_output_pinning(Arc::new(data), num_threads, num_hash_bits) 
                 },
                 4 => {
-                    let data = Arc::new(read_data("./2to24.data"));
+                    let data = Arc::new(read_data("./test.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
@@ -193,27 +193,9 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
             });
         }
     });
-    println!("There are {} elements in total", data.len());
-    let mut counter = 0;
-    let mut total_counter = 0;
-    for (buffer, _) in buffers {
-        let mut buffer_counter = 0;
-        // length is not good as we add 50% -> i need to count the elements that are not (0,0)
-        // somehow...
-        //println!("Buffer # {} has {} elements", counter, unsafe { (*buffer.get()).len() } );
-        for (key, _) in unsafe { (&*buffer.get()) } {
-            if *key != 0 {
-                buffer_counter += 1;
-            }
-        }
-
-        println!("Buffer # {} has {} elements", counter, buffer_counter ); // first might be
-        // off-by-one? yes :)
-        counter += 1;
-        total_counter += buffer_counter;
-    }
-    println!("Total counter: {} - should be off-by-one compared to total amount of elements", total_counter);
+    validate_output(data.len(), &buffers);
 }
+
 
 fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size: i32, num_threads: i32) {
     //b hash bits gives 2^b output partitions
@@ -258,26 +240,28 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
             });
         }
     });
+    validate_output(data.len(), &buffers);
+}
 
-    println!("There are {} elements in total", data.len());
+fn validate_output(data_size: usize, buffers: &Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)>) {
+    println!("There are {} elements in total", data_size);
     let mut counter = 0;
+    let mut total_counter = 0;
     for (buffer, _) in buffers {
         let mut buffer_counter = 0;
-        // length is not good as we add 50% -> i need to count the elements that are not (0,0)
-        // somehow...
-        //println!("Buffer # {} has {} elements", counter, unsafe { (*buffer.get()).len() } );
-        for (key, payload) in unsafe { (&*buffer.get()) } {
-            if *key != 0 && *payload != 0 {
+        for (key, _) in unsafe { (&*buffer.get()) } {
+            if *key != 0 {
                 buffer_counter += 1;
             }
         }
 
         println!("Buffer # {} has {} elements", counter, buffer_counter ); // first might be
-        // off-by-one?
+        // off-by-one? yes :)
         counter += 1;
+        total_counter += buffer_counter;
     }
+    println!("Total counter: {} - should be off-by-one compared to total amount of elements", total_counter);
 }
-
 
 fn gen_data(size: usize, file: &str) -> io::Result<()> {
     println!("Writing {} tuples to {}...", size, file);
