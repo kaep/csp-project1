@@ -45,12 +45,8 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
-                    let start = Instant::now();
                     let data = read_data("./2to24.data");
-                    let data_read = start.elapsed().as_millis();
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
-                    let finish = start.elapsed().as_millis();
-                    println!("{} ms to read data and {} ms to finish from there", data_read, finish);
                 },
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
