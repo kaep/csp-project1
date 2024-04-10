@@ -45,8 +45,12 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./test.data");
+                    let start = Instant::now();
+                    let data = read_data("./2to24.data");
+                    let data_read = start.elapsed().as_millis();
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
+                    let finish = start.elapsed().as_millis();
+                    println!("{} ms to read data and {} ms to finish from there", data_read, finish);
                 },
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
@@ -110,6 +114,7 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
         for thread_number in 0..num_threads {
             let cloned_core_ids = core_ids.clone();
             let cloned_chunks = Arc::clone(&chunks);
+            let my_chunk: Vec<(u64, u64)> = cloned_chunks[thread_number as usize].into();
             scope.spawn(move || {
                 let thread_number = thread_number;
                 //evenly distribute on all available cores
@@ -117,7 +122,7 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
              
                 //pinning was successfull
                 if thread_pinned_succesfully {
-                    independent_output_thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
+                    independent_output_thread(my_chunk, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
                 }
             });
         }
@@ -142,18 +147,19 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
     thread::scope(|s| {
         for thread_number in 0..num_threads {
             let cloned_chunks = Arc::clone(&chunks);
+            let my_chunk: Vec<(u64, u64)> = cloned_chunks[thread_number as usize].into();
             s.spawn(move || {
-                independent_output_thread(cloned_chunks, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
+                independent_output_thread(my_chunk, buffer_size as usize, num_buffers, num_hash_bits, thread_number);
             });
         }
     });
 }
 
-fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
-    let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size]; num_buffers as usize];
-    for (key, payload) in chunk[thread_number as usize] {
+fn independent_output_thread(chunk: Vec<(u64, u64)>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
+    let mut buffers: Vec<Vec<(u64, u64)>> = vec![vec![(0,0); buffer_size]; num_buffers as usize];
+    for (key, payload) in chunk.iter() {
         let hash = hash(*key as i64, num_hash_bits);
-        buffers[hash as usize].push(*payload);
+        buffers[hash as usize].push((*key, *payload));
     }
 }
 
