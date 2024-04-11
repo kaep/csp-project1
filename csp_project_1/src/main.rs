@@ -95,7 +95,7 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
     let start = Instant::now();
     let n = data.len() as i32; 
     let buffer_size: i32 = n / (num_threads * i32::pow(2, num_hash_bits as u32));
-    let num_buffers: i32 = num_threads * i32::pow(2, num_hash_bits as u32);
+    let num_buffers: i32 = i32::pow(2, num_hash_bits as u32);
 
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
@@ -130,7 +130,7 @@ fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_
 fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
     let n = data.len() as i32; 
     let buffer_size = (n as f32 / (num_threads * i32::pow(2, num_hash_bits as u32)) as f32).ceil();
-    let num_buffers: i32 = num_threads * i32::pow(2, num_hash_bits as u32);
+    let num_buffers: i32 = i32::pow(2, num_hash_bits as u32);
 
     // we need to account for non-divisible data sizes somehow?
     // maybe see PCPP code
