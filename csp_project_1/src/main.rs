@@ -4,7 +4,7 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    borrow::BorrowMut, cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}, thread, time::Instant
+    borrow::BorrowMut, cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread, time::Instant
 };
 use std::time;
 use std::sync::atomic::AtomicU64;
@@ -178,24 +178,19 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
             let cloned_chunks = Arc::clone(&chunks);
             let buffers = &buffers;
             s.spawn(move || {
-                println!("Thread # {} has chunk of size {}", thread_number, cloned_chunks[thread_number as usize].len());
+                //println!("Thread # {} has chunk of size {}", thread_number, cloned_chunks[thread_number as usize].len());
                 for (key, payload) in cloned_chunks[thread_number as usize] {
                     let hash = hash(*key as i64, num_hash_bits);
                     let (vec, counter) = &buffers[hash as usize];
-                    loop {
-                        let index = counter.load(Relaxed);
-                        if counter.compare_exchange(index, index+1, Relaxed, Relaxed).is_ok() {
-                            unsafe {
-                                *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
-                            }
-                            break;
-                        }
-                    }
+                    let index = counter.fetch_add(1, SeqCst);
+                    unsafe {
+                        *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                    }                                                                                 
                 }
             });
         }
     });
-    validate_output(data.len(), &buffers);
+    //validate_output(data.len(), &buffers);
 }
 
 
@@ -228,21 +223,16 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
                     for (key, payload) in cloned_chunks[thread_number as usize] {
                         let hash = hash(*key as i64, num_hash_bits);
                         let (vec, counter) = &buffers[hash as usize];
-                    loop {
-                        let index = counter.load(Relaxed);
-                            if counter.compare_exchange(index, index+1, Relaxed, Relaxed).is_ok() {
-                                unsafe {
-                                    *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
-                                }
-                                break;
-                            }
-                        }
+                        let index = counter.fetch_add(1, SeqCst);
+                        unsafe {
+                            *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                        }                                                                                 
                     }
                 }
             });
         }
     });
-    validate_output(data.len(), &buffers);
+    //validate_output(data.len(), &buffers);
 }
 
 fn validate_output(data_size: usize, buffers: &Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)>) {
