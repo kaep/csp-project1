@@ -45,8 +45,13 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
+                    let start = Instant::now();
                     let data = read_data("./2to24.data");
+                    let after_data = start.elapsed();
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
+                    let finish = start.elapsed();
+                    println!("Time to read data {}", after_data.as_millis());
+                    println!("Time to complete {}", finish.as_millis());
                 },
                 2 => {
                     let data = Arc::new(read_data("./test.data"));
@@ -64,6 +69,12 @@ fn main() -> io::Result<()> {
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
+                },
+                5 => {
+                    let start = Instant::now();
+                    let data = read_data("./2to24.data");
+                    let after_data = start.elapsed();
+                    println!("Time to read data {} with length {}", after_data.as_millis(), data.len());
                 }
                 _ => panic!("Invalid partitioning method! Pls give 1, 2, 3 or 4"),
             };
