@@ -1,13 +1,11 @@
 
-#![allow(unused)]
 #![feature(sync_unsafe_cell)]
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    borrow::BorrowMut, cell::{SyncUnsafeCell, UnsafeCell}, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread, time::Instant
+    cell::SyncUnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread, time::Instant
 };
-use std::time;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicU32;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -45,19 +43,14 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
-                    let start = Instant::now();
                     let data = read_data("./2to24.data");
-                    let after_data = start.elapsed();
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
-                    let finish = start.elapsed();
-                    println!("Time to read data {}", after_data.as_millis());
-                    println!("Time to complete {}", finish.as_millis());
                 },
                 2 => {
-                    let data = Arc::new(read_data("./test.data"));
+                    let data = Arc::new(read_data("./2to24.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
-                    concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads)
+                    concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads);
                 },
                 // pinning 
                 3 => { 
@@ -103,7 +96,6 @@ fn hash(part_key: i64, hash_bits: i32) -> i64 {
 }
 
 fn independent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bits: i32) {
-    let start = Instant::now();
     let n = data.len() as i32; 
     let buffer_size: i32 = n / (num_threads * i32::pow(2, num_hash_bits as u32));
     let num_buffers: i32 = i32::pow(2, num_hash_bits as u32);
@@ -176,10 +168,10 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
-    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
+    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicU32)> = Vec::with_capacity(num_partitions as usize);
     // init / allocate all buffers beforehand
     for _ in 0..num_partitions {
-         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
+         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicU32::new(0)));
     }
 
     thread::scope(|s| {
@@ -191,9 +183,9 @@ fn concurrent_output(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buffer_size
                 for (key, payload) in cloned_chunks[thread_number as usize] {
                     let hash = hash(*key as i64, num_hash_bits);
                     let (vec, counter) = &buffers[hash as usize];
-                    let index = counter.fetch_add(1, SeqCst);
+                    let index = counter.fetch_add(1, Relaxed);
                     unsafe {
-                        *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                        *(*vec.get()).get_unchecked_mut(index as usize) = (*key, *payload);
                     }                                                                                 
                 }
             });
@@ -210,10 +202,10 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
     let cloned = Arc::clone(&data);
     let chunks = Arc::new(cloned.chunks(chunk_size as usize).collect::<Vec<_>>());
 
-    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)> = Vec::with_capacity(num_partitions as usize);
+    let mut buffers: Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicU32)> = Vec::with_capacity(num_partitions as usize);
     // init / allocate all buffers beforehand
     for _ in 0..num_partitions {
-         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicUsize::new(0)));
+         buffers.push((SyncUnsafeCell::new(vec![(0u64, 0u64); buffer_size as usize]), AtomicU32::new(0)));
     }
 
     let core_ids = Arc::new(core_affinity::get_core_ids().unwrap());
@@ -234,7 +226,7 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
                         let (vec, counter) = &buffers[hash as usize];
                         let index = counter.fetch_add(1, SeqCst);
                         unsafe {
-                            *(*vec.get()).get_unchecked_mut(index) = (*key, *payload);
+                            *(*vec.get()).get_unchecked_mut(index as usize) = (*key, *payload);
                         }                                                                                 
                     }
                 }
@@ -250,7 +242,7 @@ fn validate_output(data_size: usize, buffers: &Vec<(SyncUnsafeCell<Vec<(u64, u64
     let mut total_counter = 0;
     for (buffer, _) in buffers {
         let mut buffer_counter = 0;
-        for (key, _) in unsafe { (&*buffer.get()) } {
+        for (key, _) in unsafe { &*buffer.get() } {
             if *key != 0 {
                 buffer_counter += 1;
             }
