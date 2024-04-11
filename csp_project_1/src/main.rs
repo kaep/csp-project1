@@ -45,7 +45,7 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./test.data");
+                    let data = read_data("./2to24.data");
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => {
@@ -150,10 +150,10 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
 }
 
 fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
-    let mut buffers: Vec<Vec<u64>> = vec![vec![0; buffer_size]; num_buffers as usize];
+    let mut buffers: Vec<Vec<(u64, u64)>> = vec![vec![(0, 0); buffer_size]; num_buffers as usize];
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
-        buffers[hash as usize].push(*payload);
+        buffers[hash as usize].push((*key, *payload));
     }
 }
 
