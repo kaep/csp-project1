@@ -3,7 +3,7 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    cell::SyncUnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread, time::Instant
+    cell::SyncUnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread,
 };
 use std::sync::atomic::AtomicU32;
 
@@ -25,11 +25,17 @@ enum Commands {
         num_hash_bits: i32,
         partitioning_method: i32,
     },
+    BenchData {}, 
 }
 
 fn main() -> io::Result<()> {
     let args = Cli::parse();
     match args.command {
+        Commands::BenchData {  } => {
+                let data = read_data("../../2to24.data");
+                println!("Read data with length {}", data.len()); // attempt at having the compiler not optimise this away
+                Ok(())
+        }
         Commands::Gen { size, file } => gen_data(size, file.as_str()),
         Commands::Run {
             num_threads,
@@ -43,31 +49,25 @@ fn main() -> io::Result<()> {
                 // );
             match partitioning_method {
                 1 => {
-                    let data = read_data("./2to24.data");
+                    let data = read_data("../../2to24.data");
                     independent_output(Arc::new(data), num_threads, num_hash_bits);
                 },
                 2 => {
-                    let data = Arc::new(read_data("./2to24.data"));
+                    let data = Arc::new(read_data("../../2to24.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output(data, num_hash_bits, buffer_size as i32, num_threads);
                 },
                 // pinning 
                 3 => { 
-                    let data = read_data("./test.data");
+                    let data = read_data("../../2to24.data");
                     independent_output_pinning(Arc::new(data), num_threads, num_hash_bits) 
                 },
                 4 => {
-                    let data = Arc::new(read_data("./test.data"));
+                    let data = Arc::new(read_data("../../2to24.data"));
                     let n = data.len() as f32;
                     let buffer_size =  ((n / (i32::pow(2, num_hash_bits as u32) as f32)).ceil() * 1.5).ceil();
                     concurrent_output_pinning(data, num_hash_bits, buffer_size as i32, num_threads)
-                },
-                5 => {
-                    let start = Instant::now();
-                    let data = read_data("./2to24.data");
-                    let after_data = start.elapsed();
-                    println!("Time to read data {} with length {}", after_data.as_millis(), data.len());
                 }
                 _ => panic!("Invalid partitioning method! Pls give 1, 2, 3 or 4"),
             };
@@ -224,7 +224,7 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
                     for (key, payload) in cloned_chunks[thread_number as usize] {
                         let hash = hash(*key as i64, num_hash_bits);
                         let (vec, counter) = &buffers[hash as usize];
-                        let index = counter.fetch_add(1, SeqCst);
+                        let index = counter.fetch_add(1, Relaxed);
                         unsafe {
                             *(*vec.get()).get_unchecked_mut(index as usize) = (*key, *payload);
                         }                                                                                 
