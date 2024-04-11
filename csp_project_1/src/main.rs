@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
     let args = Cli::parse();
     match args.command {
         Commands::BenchData {  } => {
-                let _data = read_data("./2to24.data");
+                let _data = read_data("../../2to24.data");
                 Ok(())
         }
         Commands::Gen { size, file } => gen_data(size, file.as_str()),
