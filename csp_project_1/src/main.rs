@@ -32,8 +32,7 @@ fn main() -> io::Result<()> {
     let args = Cli::parse();
     match args.command {
         Commands::BenchData {  } => {
-                let data = read_data("../../2to24.data");
-                println!("Read data with length {}", data.len()); // attempt at having the compiler not optimise this away
+                let _data = read_data("./2to24.data");
                 Ok(())
         }
         Commands::Gen { size, file } => gen_data(size, file.as_str()),
