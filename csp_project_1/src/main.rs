@@ -3,7 +3,7 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::{
-    cell::SyncUnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::{AtomicUsize, Ordering::{Relaxed, SeqCst}}, Arc}, thread,
+    cell::SyncUnsafeCell, fs::{self, File}, io::{self, Write}, sync::{atomic::Ordering::Relaxed, Arc}, thread,
 };
 use std::sync::atomic::AtomicU32;
 
@@ -235,7 +235,7 @@ fn concurrent_output_pinning(data: Arc<Vec<(u64, u64)>>, num_hash_bits: i32, buf
     //validate_output(data.len(), &buffers);
 }
 
-fn validate_output(data_size: usize, buffers: &Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicUsize)>) {
+fn validate_output(data_size: usize, buffers: &Vec<(SyncUnsafeCell<Vec<(u64, u64)>>, AtomicU32)>) {
     println!("There are {} elements in total", data_size);
     let mut counter = 0;
     let mut total_counter = 0;
