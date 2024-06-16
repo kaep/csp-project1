@@ -152,11 +152,25 @@ fn independent_output(data: Arc<Vec<(u64, u64)>>, num_threads: i32, num_hash_bit
 }
 
 fn independent_output_thread(chunk: Arc<Vec<&[(u64, u64)]>>, buffer_size: usize, num_buffers: i32, num_hash_bits: i32, thread_number: i32) {
-    let mut buffers: Vec<Vec<(u64, u64)>> = vec![vec![(0, 0); buffer_size]; num_buffers as usize];
+    //println!("Buffer size {}", buffer_size);
+    //let mut buffers: Vec<Vec<(u64, u64)>> = vec![vec![(0, 0); buffer_size]; num_buffers as usize];
+    let mut buffers: Vec<Vec<(u64, u64)>> = vec![Vec::with_capacity(buffer_size); num_buffers as usize];
+    //println!("PRE Capacity and length of output buffers for thread {}", thread_number);
+    //for buffer in &buffers {
+    //    println!("Pre Cap {}", buffer.capacity());
+    //    println!("Pre Len {}", buffer.len());
+    //}
     for (key, payload) in chunk[thread_number as usize] {
         let hash = hash(*key as i64, num_hash_bits);
         buffers[hash as usize].push((*key, *payload));
+        //println!("len {} vs cap {}", buffers[hash as usize].len(), buffers[hash as usize].capacity());
     }
+    //println!("POST Capacity and length of output buffers for thread {}", thread_number);
+    //for buffer in &buffers {
+    //    println!("Post Cap {}", buffer.capacity());
+    //    println!("Post Len {}", buffer.len());
+    //}
+    //println!("Input len {}", chunk[thread_number as usize].len());
 }
 
 
